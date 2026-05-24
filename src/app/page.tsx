@@ -1,76 +1,149 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { useDraft } from "@/hooks/use-draft";
 import { InspirationCard } from "@/components/inspiration-card";
 import { FloatingMenu } from "@/components/floating-menu";
-
-const mockFeed = [
-  {
-    id: "1",
-    authorName: "小陈",
-    timeAgo: "3 分钟前",
-    content: "刚刚想到一个绝妙的点子：用 AI 帮用户自动分类灵感标签，这样就不用自己手动整理了。",
-    likeCount: 12,
-    bookmarkCount: 5,
-  },
-  {
-    id: "2",
-    authorName: "设计师小王",
-    timeAgo: "15 分钟前",
-    circleName: "产品设计圈",
-    content: "复古像素风配现代圆角，这个反差感应该很有趣。我打算先做个组件库把基础元素定下来。",
-    likeCount: 28,
-    bookmarkCount: 7,
-  },
-  {
-    id: "3",
-    authorName: "创客小李",
-    timeAgo: "1 小时前",
-    circleName: "独立开发圈",
-    content: "记录一个关于笔记 app 的交互方案：下拉手势触发画布模式，比传统按钮入口更直觉。",
-    likeCount: 45,
-    bookmarkCount: 12,
-  },
-  {
-    id: "4",
-    authorName: "阿琳",
-    timeAgo: "2 小时前",
-    content: "早上喝咖啡的时候突然想到，如果把待办事项和番茄钟合并成一个时间轴视图会不会更好用？",
-    likeCount: 6,
-    bookmarkCount: 2,
-  },
-  {
-    id: "5",
-    authorName: "前端小张",
-    timeAgo: "3 小时前",
-    circleName: "独立开发圈",
-    content:
-      "Tailwind v4 的 CSS-first 配置方式比 v3 的 JS config 优雅太多了，主题定义直接写在 CSS 里，和设计 token 天然对齐。",
-    likeCount: 33,
-    bookmarkCount: 9,
-  },
-];
+import { Toast } from "@/components/toast";
+import { Button } from "@/components/button";
+import { Skeleton } from "@/components/skeleton";
+import { EmptyState } from "@/components/empty-state";
+import type { InspirationFeedItem, PaginatedResponse } from "@/lib/types";
+import Link from "next/link";
 
 export default function Home() {
+  const { user } = useAuth();
+  const { draft, setDraft, clearDraft } = useDraft();
+
+  const [feed, setFeed] = useState<InspirationFeedItem[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Publish state
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginNickname, setLoginNick] = useState("");
+  const [loginPassword, setLoginPw] = useState("");
+  const [isRegister, setIsRegister] = useState(false);
+  const [authError, setAuthError] = useState("");
+
+  // Toast
+  const [toastMsg, setToastMsg] = useState("");
+  const [toastAction, setToastAction] = useState("");
+  const [lastPubId, setLastPubId] = useState("");
+
+  async function loadFeed(reset?: boolean) {
+    const c = reset ? undefined : (cursor || undefined);
+    const r = await api<PaginatedResponse<InspirationFeedItem>>(
+      `/api/inspirations?limit=20${c ? `&cursor=${encodeURIComponent(c)}` : ""}`
+    );
+    if (r.ok) {
+      setFeed(reset ? r.data.items : [...feed, ...r.data.items]);
+      setCursor(r.data.next_cursor);
+    }
+    setLoading(false);
+    setLoadingMore(false);
+  }
+
+  useEffect(() => {
+    loadFeed(true);
+    const onFocus = () => loadFeed(true);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [user]);
+
+  const handlePublish = useCallback(async () => {
+    if (!user) { setShowLogin(true); return; }
+    if (!draft.trim()) return;
+
+    const r = await api<InspirationFeedItem>("/api/inspirations", {
+      method: "POST",
+      body: JSON.stringify({ content: draft, visibility: "public" }),
+    });
+    if (r.ok) {
+      clearDraft();
+      setToastMsg("已公开发布");
+      setToastAction("关闭分享");
+      setLastPubId(r.data.id);
+      setFeed((prev) => [r.data as InspirationFeedItem, ...prev]);
+    }
+  }, [user, draft, clearDraft]);
+
+  async function handleCloseShare() {
+    if (!lastPubId) return;
+    await api(`/api/inspirations/${lastPubId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ visibility: "private" }),
+    });
+    setToastMsg("");
+    setFeed((prev) => prev.filter((i) => i.id !== lastPubId));
+  }
+
+  async function handleAuth() {
+    const path = isRegister ? "/api/auth/register" : "/api/auth/login";
+    const r = await api(path, {
+      method: "POST",
+      body: JSON.stringify({ nickname: loginNickname, password: loginPassword }),
+    });
+    if (r.ok) {
+      setShowLogin(false);
+      setAuthError("");
+      window.location.reload();
+    } else {
+      setAuthError(r.error);
+    }
+  }
+
   return (
     <div className="max-w-app mx-auto min-h-screen relative">
+      {/* Login modal */}
+      {showLogin && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-lg" onClick={() => setShowLogin(false)}>
+          <div className="bg-bg-card rounded-lg p-xl w-full max-w-[320px] shadow-float" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-title text-text-primary mb-lg">{isRegister ? "注册" : "登录"}</h2>
+            <input className="w-full bg-bg-page rounded-md p-md text-body text-text-primary outline-none mb-sm" placeholder="昵称" value={loginNickname} onChange={(e) => setLoginNick(e.target.value)} />
+            <input type="password" className="w-full bg-bg-page rounded-md p-md text-body text-text-primary outline-none mb-md" placeholder="密码" value={loginPassword} onChange={(e) => setLoginPw(e.target.value)} />
+            {authError && <p className="text-caption text-red-500 mb-sm">{authError}</p>}
+            <Button variant="primary" onClick={handleAuth}>{isRegister ? "注册" : "登录"}</Button>
+            <button className="w-full text-caption text-text-secondary mt-sm text-center" onClick={() => { setIsRegister(!isRegister); setAuthError(""); }}>
+              {isRegister ? "已有账号？去登录" : "没有账号？去注册"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Publish area */}
       <div className="bg-bg-card rounded-b-md px-lg pt-lg pb-lg shadow-card">
         <textarea
           className="w-full bg-bg-page rounded-md p-lg text-body text-text-primary placeholder:text-text-tertiary resize-none outline-none min-h-[80px]"
           placeholder="此刻的想法…"
-          readOnly
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
         />
         <div className="flex items-center justify-between mt-md">
           <div className="flex gap-sm">
             <span className="text-caption text-text-secondary bg-bg-accent rounded-sm px-sm py-[4px]">
-              📷 添加图片
+              📷
             </span>
             <span className="text-caption text-text-secondary bg-bg-accent rounded-sm px-sm py-[4px]">
               🌐 公开
             </span>
           </div>
-          <span className="inline-flex items-center justify-center rounded-full min-h-[44px] px-xl text-body font-medium bg-action-primary text-white">
+          <button
+            type="button"
+            onClick={handlePublish}
+            className="bg-action-primary text-white rounded-full min-h-[44px] px-xl text-body font-medium hover:bg-action-hover transition-colors"
+          >
             发布
-          </span>
+          </button>
         </div>
+        {!user && (
+          <p className="text-caption text-text-tertiary mt-sm text-center">
+            首次发布需要 <button className="text-action-primary underline" onClick={() => setShowLogin(true)}>登录 / 注册</button>
+          </p>
+        )}
       </div>
 
       {/* Divider */}
@@ -80,13 +153,54 @@ export default function Home() {
 
       {/* Feed */}
       <div className="px-lg flex flex-col gap-md pb-3xl">
-        {mockFeed.map((item) => (
-          <InspirationCard key={item.id} {...item} />
+        {loading && (
+          <>
+            {[1, 2].map((i) => (
+              <div key={i} className="bg-bg-card rounded-md p-lg shadow-card flex flex-col gap-md">
+                <div className="flex items-center gap-sm">
+                  <Skeleton variant="circular" width={32} height={32} />
+                  <div className="flex flex-col gap-[6px] flex-1">
+                    <Skeleton variant="text" width="80px" />
+                    <Skeleton variant="text" width="120px" />
+                  </div>
+                </div>
+                <Skeleton variant="text" />
+                <Skeleton variant="text" width="60%" />
+              </div>
+            ))}
+          </>
+        )}
+        {!loading && feed.length === 0 && (
+          <EmptyState title="还没有灵感" description="去发现一些有趣的圈子吧" actionLabel="去发现圈子" />
+        )}
+        {feed.map((item) => (
+          <Link key={item.id} href={`/idea/${item.id}`} className="block">
+            <InspirationCard
+              authorName={item.author.nickname}
+              timeAgo={item.created_at}
+              circleName={item.circle_name || undefined}
+              content={item.content}
+              likeCount={item.like_count}
+              bookmarkCount={item.bookmark_count}
+            />
+          </Link>
         ))}
+        {cursor && !loading && (
+          <button
+            onClick={() => { setLoadingMore(true); loadFeed(); }}
+            disabled={loadingMore}
+            className="text-caption text-text-secondary text-center py-md hover:text-text-primary"
+          >
+            {loadingMore ? "加载中…" : "加载更多"}
+          </button>
+        )}
+        {!cursor && feed.length > 0 && (
+          <div className="text-caption text-text-tertiary text-center py-md">已经到底了</div>
+        )}
       </div>
 
-      {/* Floating menu */}
       <FloatingMenu />
+      <Toast visible={!!toastMsg} message={toastMsg} actionLabel={toastAction} onAction={toastAction ? handleCloseShare : undefined} />
     </div>
   );
 }
