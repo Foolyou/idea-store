@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 interface ToastProps {
   message: string;
@@ -18,13 +18,9 @@ export function Toast({
   visible,
   className,
 }: ToastProps) {
-  const [show, setShow] = useState(visible);
+  const [dismissed, setDismissed] = useState(false);
 
-  useEffect(() => {
-    setShow(visible);
-  }, [visible]);
-
-  if (!show) return null;
+  if (!visible || dismissed) return null;
 
   return (
     <div
@@ -42,7 +38,7 @@ export function Toast({
           <button
             onClick={() => {
               onAction?.();
-              setShow(false);
+              setDismissed(true);
             }}
             className="text-action-primary text-[14px] font-medium shrink-0 hover:opacity-80 transition-opacity"
           >

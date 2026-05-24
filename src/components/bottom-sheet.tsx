@@ -18,18 +18,18 @@ export function BottomSheet({
   children,
   className,
 }: BottomSheetProps) {
-  const [visible, setVisible] = useState(open);
+  const [render, setRender] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setVisible(true);
-    } else {
-      const timer = setTimeout(() => setVisible(false), 150);
-      return () => clearTimeout(timer);
+      const id = setTimeout(() => setRender(true), 0);
+      return () => clearTimeout(id);
     }
+    const id = setTimeout(() => setRender(false), 150);
+    return () => clearTimeout(id);
   }, [open]);
 
-  if (!visible) return null;
+  if (!render && !open) return null;
 
   return (
     <>
