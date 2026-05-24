@@ -1,65 +1,92 @@
-import Image from "next/image";
+import { InspirationCard } from "@/components/inspiration-card";
+import { FloatingMenu } from "@/components/floating-menu";
+
+const mockFeed = [
+  {
+    id: "1",
+    authorName: "小陈",
+    timeAgo: "3 分钟前",
+    content: "刚刚想到一个绝妙的点子：用 AI 帮用户自动分类灵感标签，这样就不用自己手动整理了。",
+    likeCount: 12,
+    bookmarkCount: 5,
+  },
+  {
+    id: "2",
+    authorName: "设计师小王",
+    timeAgo: "15 分钟前",
+    circleName: "产品设计圈",
+    content: "复古像素风配现代圆角，这个反差感应该很有趣。我打算先做个组件库把基础元素定下来。",
+    likeCount: 28,
+    bookmarkCount: 7,
+  },
+  {
+    id: "3",
+    authorName: "创客小李",
+    timeAgo: "1 小时前",
+    circleName: "独立开发圈",
+    content: "记录一个关于笔记 app 的交互方案：下拉手势触发画布模式，比传统按钮入口更直觉。",
+    likeCount: 45,
+    bookmarkCount: 12,
+  },
+  {
+    id: "4",
+    authorName: "阿琳",
+    timeAgo: "2 小时前",
+    content: "早上喝咖啡的时候突然想到，如果把待办事项和番茄钟合并成一个时间轴视图会不会更好用？",
+    likeCount: 6,
+    bookmarkCount: 2,
+  },
+  {
+    id: "5",
+    authorName: "前端小张",
+    timeAgo: "3 小时前",
+    circleName: "独立开发圈",
+    content:
+      "Tailwind v4 的 CSS-first 配置方式比 v3 的 JS config 优雅太多了，主题定义直接写在 CSS 里，和设计 token 天然对齐。",
+    likeCount: 33,
+    bookmarkCount: 9,
+  },
+];
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="max-w-app mx-auto min-h-screen relative">
+      {/* Publish area */}
+      <div className="bg-bg-card rounded-b-md px-lg pt-lg pb-lg shadow-card">
+        <textarea
+          className="w-full bg-bg-page rounded-md p-lg text-body text-text-primary placeholder:text-text-tertiary resize-none outline-none min-h-[80px]"
+          placeholder="此刻的想法…"
+          readOnly
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+        <div className="flex items-center justify-between mt-md">
+          <div className="flex gap-sm">
+            <span className="text-caption text-text-secondary bg-bg-accent rounded-sm px-sm py-[4px]">
+              📷 添加图片
+            </span>
+            <span className="text-caption text-text-secondary bg-bg-accent rounded-sm px-sm py-[4px]">
+              🌐 公开
+            </span>
+          </div>
+          <span className="inline-flex items-center justify-center rounded-full min-h-[44px] px-xl text-body font-medium bg-action-primary text-white">
+            发布
+          </span>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </div>
+
+      {/* Divider */}
+      <div className="text-center py-lg">
+        <span className="text-caption text-text-tertiary">— 社区灵感 —</span>
+      </div>
+
+      {/* Feed */}
+      <div className="px-lg flex flex-col gap-md pb-3xl">
+        {mockFeed.map((item) => (
+          <InspirationCard key={item.id} {...item} />
+        ))}
+      </div>
+
+      {/* Floating menu */}
+      <FloatingMenu />
     </div>
   );
 }

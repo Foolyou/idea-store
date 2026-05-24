@@ -1,3 +1,5 @@
+"use client";
+
 import { cn } from "@/lib/utils";
 import { Avatar } from "./avatar";
 import { Tag } from "./tag";
