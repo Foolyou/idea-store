@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { unpackImages } from "../utils";
 import { parseCursor, cursorWhere, paginate } from "./pagination";
 import type { PageParams } from "./pagination";
 
@@ -22,15 +23,6 @@ interface RawRow {
 
 function packImages(images: string[]): string {
   return JSON.stringify(images);
-}
-
-function unpackImages(raw: string): string[] {
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
 }
 
 const FEED_SELECT = `

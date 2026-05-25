@@ -1,4 +1,4 @@
-import { getCurrentUser, requireUser, withErrorHandler, jsonOk, jsonError } from "@/lib/request";
+import { getCurrentUser, requireUser, withErrorHandler, jsonOk, ValidationError, ConflictError } from "@/lib/request";
 import { listCircles, createCircle } from "@/lib/queries/circles";
 import { createCircleSchema, searchSchema } from "@/lib/validations";
 
@@ -21,14 +21,17 @@ export const POST = withErrorHandler(async (req: Request) => {
   const parsed = createCircleSchema.safeParse(body);
 
   if (!parsed.success) {
-    return jsonError(parsed.error.issues[0].message, 400);
+    throw new ValidationError(parsed.error.issues[0].message);
   }
 
-  const existing = await listCircles(parsed.data.name, null, { limit: 1 });
-  if (existing.items.length > 0) {
-    return jsonError("该圈子名已存在", 409);
+  // Use exact match for uniqueness check (not LIKE fuzzy match)
+  try {
+    const circle = await createCircle(parsed.data.name, parsed.data.description ?? "", user.id);
+    return jsonOk(circle, { status: 201 });
+  } catch (e: unknown) {
+    if (e instanceof Error && e.message.includes("UNIQUE constraint failed")) {
+      throw new ConflictError("该圈子名已存在");
+    }
+    throw e;
   }
-
-  const circle = await createCircle(parsed.data.name, parsed.data.description ?? "", user.id);
-  return jsonOk(circle, { status: 201 });
 });

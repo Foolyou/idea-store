@@ -1,8 +1,8 @@
 export const runtime = "nodejs";
 
 import { hashPassword, verifyPassword } from "@/lib/password";
-import { getUserByNickname, updateUser, checkNicknameUnique } from "@/lib/queries/users";
-import { requireUser, withErrorHandler, jsonOk, jsonError, ConflictError } from "@/lib/request";
+import { getUserById, updateUser, checkNicknameUnique } from "@/lib/queries/users";
+import { requireUser, withErrorHandler, jsonOk, ConflictError, ValidationError } from "@/lib/request";
 import { updateSettingsSchema } from "@/lib/validations";
 
 export const PATCH = withErrorHandler(async (req: Request) => {
@@ -11,13 +11,12 @@ export const PATCH = withErrorHandler(async (req: Request) => {
   const parsed = updateSettingsSchema.safeParse(body);
 
   if (!parsed.success) {
-    return jsonError(parsed.error.issues[0].message, 400);
+    throw new ValidationError(parsed.error.issues[0].message);
   }
 
   const { nickname, avatar_url, password } = parsed.data;
   const updates: { nickname?: string; avatar_url?: string | null; password_hash?: string } = {};
 
-  // Handle nickname update
   if (nickname && nickname !== user.nickname) {
     const unique = await checkNicknameUnique(nickname, user.id);
     if (!unique) {
@@ -26,20 +25,18 @@ export const PATCH = withErrorHandler(async (req: Request) => {
     updates.nickname = nickname;
   }
 
-  // Handle avatar update (allow setting to null)
   if (avatar_url !== undefined) {
     updates.avatar_url = avatar_url;
   }
 
-  // Handle password update
   if (password) {
-    const currentUser = await getUserByNickname(user.nickname);
+    const currentUser = await getUserById(user.id);
     if (!currentUser) {
-      return jsonError("用户不存在", 404);
+      throw new ValidationError("用户不存在");
     }
     const valid = await verifyPassword(password.old, currentUser.password_hash);
     if (!valid) {
-      return jsonError("原密码不正确", 400);
+      throw new ValidationError("原密码不正确");
     }
     updates.password_hash = await hashPassword(password.new);
   }

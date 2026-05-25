@@ -38,7 +38,7 @@ export function cursorWhere(
     return { clause: "", args: [] };
   }
   return {
-    clause: `AND (${alias}.created_at, ${alias}.id) < (?1, ?2)`,
+    clause: `AND (${alias}.created_at, ${alias}.id) < (?, ?)`,
     args: [cursorCreated, cursorId],
   };
 }

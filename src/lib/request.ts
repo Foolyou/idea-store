@@ -51,6 +51,29 @@ export async function requireUser(): Promise<{
 }
 
 // ==========================================
+// Rate limiting (per-instance, single server)
+// ==========================================
+
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+export function rateLimit(key: string, maxRequests: number = 5, windowMs: number = 60_000): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+
+  if (entry.count >= maxRequests) {
+    return false;
+  }
+
+  entry.count++;
+  return true;
+}
+
+// ==========================================
 // 错误类
 // ==========================================
 
@@ -96,6 +119,13 @@ export class ConflictError extends AppError {
   constructor(message: string) {
     super(message, 409);
     this.name = "ConflictError";
+  }
+}
+
+export class RateLimitError extends AppError {
+  constructor(message: string = "请求过于频繁，请稍后再试") {
+    super(message, 429);
+    this.name = "RateLimitError";
   }
 }
 

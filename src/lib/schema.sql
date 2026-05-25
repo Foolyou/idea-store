@@ -9,8 +9,7 @@ CREATE TABLE users (
   avatar_url      TEXT,
   last_visibility TEXT NOT NULL DEFAULT 'public' CHECK (last_visibility IN ('public', 'circle', 'private')),
   last_circle_id  TEXT,
-  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (last_circle_id) REFERENCES circles(id) ON DELETE SET NULL
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE inspirations (
@@ -33,7 +32,6 @@ CREATE TABLE circles (
   name         TEXT NOT NULL UNIQUE,
   description  TEXT NOT NULL DEFAULT '',
   creator_id   TEXT NOT NULL,
-  member_count INTEGER NOT NULL DEFAULT 1,
   created_at   TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
 );

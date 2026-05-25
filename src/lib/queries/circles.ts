@@ -1,6 +1,9 @@
 import { db } from "../db";
+import { unpackImages } from "../utils";
 import { parseCursor, cursorWhere, paginate } from "./pagination";
 import type { PageParams } from "./pagination";
+
+const MEMBER_COUNT_SUB = "(SELECT COUNT(*) FROM circle_members cm2 WHERE cm2.circle_id = c.id)";
 
 // ==========================================
 // Circle queries
@@ -26,9 +29,9 @@ export async function listCircles(
     ? ", EXISTS(SELECT 1 FROM circle_members cm WHERE cm.circle_id = c.id AND cm.user_id = ?) as is_joined"
     : ", 0 as is_joined";
 
-  const sql = `SELECT c.id, c.name, c.description, c.member_count, c.created_at,
-           u.id as creator_id, u.nickname as creator_nickname, u.avatar_url as creator_avatar
-           ${condJoined}
+  const sql = `SELECT c.id, c.name, c.description, ${MEMBER_COUNT_SUB} as member_count, c.created_at,
+    u.id as creator_id, u.nickname as creator_nickname, u.avatar_url as creator_avatar
+    ${condJoined}
     FROM circles c
     JOIN users u ON c.creator_id = u.id
     WHERE 1=1 ${searchClause}
@@ -52,9 +55,9 @@ export async function getCircleById(
     ? ", EXISTS(SELECT 1 FROM circle_members cm WHERE cm.circle_id = c.id AND cm.user_id = ?) as is_joined"
     : ", 0 as is_joined";
 
-  const sql = `SELECT c.id, c.name, c.description, c.member_count, c.created_at,
-           u.id as creator_id, u.nickname as creator_nickname, u.avatar_url as creator_avatar
-           ${condJoined}
+  const sql = `SELECT c.id, c.name, c.description, ${MEMBER_COUNT_SUB} as member_count, c.created_at,
+    u.id as creator_id, u.nickname as creator_nickname, u.avatar_url as creator_avatar
+    ${condJoined}
     FROM circles c
     JOIN users u ON c.creator_id = u.id
     WHERE c.id = ?`;
@@ -68,6 +71,14 @@ export async function getCircleById(
   return makeCircleItem(r.rows[0] as unknown as CircleRaw);
 }
 
+export async function isCircleMember(circleId: string, userId: string): Promise<boolean> {
+  const r = await db.execute({
+    sql: "SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?",
+    args: [circleId, userId],
+  });
+  return r.rows.length > 0;
+}
+
 export async function createCircle(
   name: string,
   description: string,
@@ -78,7 +89,7 @@ export async function createCircle(
   const txn = await db.transaction("write");
   try {
     await txn.execute({
-      sql: "INSERT INTO circles (id, name, description, creator_id, member_count) VALUES (?, ?, ?, ?, 1)",
+      sql: "INSERT INTO circles (id, name, description, creator_id) VALUES (?, ?, ?, ?)",
       args: [id, name, description, creatorId],
     });
     await txn.execute({
@@ -113,12 +124,45 @@ export async function joinCircle(
       sql: "INSERT INTO circle_members (circle_id, user_id) VALUES (?, ?)",
       args: [circleId, userId],
     });
-    await txn.execute({
-      sql: "UPDATE circles SET member_count = member_count + 1 WHERE id = ?",
-      args: [circleId],
-    });
     await txn.commit();
     return { joined: true };
+  } catch (e) {
+    await txn.rollback();
+    throw e;
+  }
+}
+
+export async function leaveCircle(
+  circleId: string,
+  userId: string
+): Promise<{ left: boolean }> {
+  const txn = await db.transaction("write");
+  try {
+    const existing = await txn.execute({
+      sql: "SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?",
+      args: [circleId, userId],
+    });
+    if (existing.rows.length === 0) {
+      await txn.rollback();
+      return { left: false };
+    }
+
+    // Don't allow creator to leave their own circle
+    const circle = await txn.execute({
+      sql: "SELECT creator_id FROM circles WHERE id = ?",
+      args: [circleId],
+    });
+    if (circle.rows.length > 0 && circle.rows[0].creator_id === userId) {
+      await txn.rollback();
+      return { left: false };
+    }
+
+    await txn.execute({
+      sql: "DELETE FROM circle_members WHERE circle_id = ? AND user_id = ?",
+      args: [circleId, userId],
+    });
+    await txn.commit();
+    return { left: true };
   } catch (e) {
     await txn.rollback();
     throw e;
@@ -165,26 +209,22 @@ export async function getCircleInspirations(
   userId: string | null,
   params: PageParams = {}
 ): Promise<{ items: CircleInspirationItem[]; next_cursor: string | null }> {
+  // Permission: only members can see circle inspirations
+  if (!userId) return { items: [], next_cursor: null };
+  const isMember = await isCircleMember(circleId, userId);
+  if (!isMember) return { items: [], next_cursor: null };
+
   const { limit, cursorCreated, cursorId } = parseCursor(params);
   const { clause: cursorClause, args: cursorArgs } = cursorWhere(cursorCreated, cursorId, "i");
 
-  const args: (string | number | null)[] = [];
-
-  const condLiked = userId
-    ? ", EXISTS(SELECT 1 FROM likes l WHERE l.inspiration_id = i.id AND l.user_id = ?) as is_liked"
-    : ", 0 as is_liked";
-  const condBookmarked = userId
-    ? ", EXISTS(SELECT 1 FROM bookmarks b WHERE b.inspiration_id = i.id AND b.user_id = ?) as is_bookmarked"
-    : ", 0 as is_bookmarked";
-
-  if (userId) args.push(userId, userId);
+  const args: (string | number | null)[] = [userId, userId];
 
   const sql = `SELECT i.id, i.content, i.images, i.visibility, i.circle_id,
-           i.like_count, i.bookmark_count, i.created_at,
-           u.id as author_id, u.nickname as author_nickname, u.avatar_url as author_avatar,
-           c.name as circle_name
-           ${condLiked}
-           ${condBookmarked}
+    i.like_count, i.bookmark_count, i.created_at,
+    u.id as author_id, u.nickname as author_nickname, u.avatar_url as author_avatar,
+    c.name as circle_name,
+    EXISTS(SELECT 1 FROM likes l WHERE l.inspiration_id = i.id AND l.user_id = ?) as is_liked,
+    EXISTS(SELECT 1 FROM bookmarks b WHERE b.inspiration_id = i.id AND b.user_id = ?) as is_bookmarked
     FROM inspirations i
     JOIN users u ON i.author_id = u.id
     LEFT JOIN circles c ON i.circle_id = c.id
@@ -212,8 +252,8 @@ export async function getCircleInspirations(
     },
     like_count: row.like_count,
     bookmark_count: row.bookmark_count,
-    is_liked: userId ? Boolean(row.is_liked) : false,
-    is_bookmarked: userId ? Boolean(row.is_bookmarked) : false,
+    is_liked: Boolean(row.is_liked),
+    is_bookmarked: Boolean(row.is_bookmarked),
     created_at: row.created_at,
   }));
 
@@ -222,9 +262,9 @@ export async function getCircleInspirations(
 
 export async function getMyCircles(userId: string): Promise<CircleRow[]> {
   const r = await db.execute({
-    sql: `SELECT c.id, c.name, c.description, c.member_count, c.created_at,
-             u.id as creator_id, u.nickname as creator_nickname, u.avatar_url as creator_avatar,
-             1 as is_joined
+    sql: `SELECT c.id, c.name, c.description, ${MEMBER_COUNT_SUB} as member_count, c.created_at,
+      u.id as creator_id, u.nickname as creator_nickname, u.avatar_url as creator_avatar,
+      1 as is_joined
       FROM circles c
       JOIN users u ON c.creator_id = u.id
       JOIN circle_members cm ON cm.circle_id = c.id AND cm.user_id = ?
@@ -328,13 +368,4 @@ function makeCircleItem(row: CircleRaw): CircleRow {
     is_joined: Boolean(row.is_joined),
     created_at: row.created_at,
   };
-}
-
-function unpackImages(raw: string): string[] {
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
 }

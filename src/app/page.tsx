@@ -34,38 +34,48 @@ export default function Home() {
   const [toastAction, setToastAction] = useState("");
   const [lastPubId, setLastPubId] = useState("");
 
-  async function loadFeed(reset?: boolean) {
-    const c = reset ? undefined : (cursor || undefined);
-    const r = await api<PaginatedResponse<InspirationFeedItem>>(
-      `/api/inspirations?limit=20${c ? `&cursor=${encodeURIComponent(c)}` : ""}`
-    );
-    if (r.ok) {
-      setFeed(reset ? r.data.items : [...feed, ...r.data.items]);
-      setCursor(r.data.next_cursor);
+  const loadFeed = useCallback(async (reset?: boolean) => {
+    setLoadingMore(true);
+    if (reset) setLoading(true);
+    try {
+      const r = await api<PaginatedResponse<InspirationFeedItem>>(
+        `/api/inspirations?limit=20`
+      );
+      if (r.ok) {
+        setFeed(r.data.items);
+        setCursor(r.data.next_cursor);
+      }
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
     }
-    setLoading(false);
-    setLoadingMore(false);
-  }
+  }, []);
 
   useEffect(() => {
     loadFeed(true);
     const onFocus = () => loadFeed(true);
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [user]);
+  }, [user, loadFeed]);
 
   const handlePublish = useCallback(async () => {
     if (!user) { setShowLogin(true); return; }
     if (!draft.trim()) return;
 
+    const visibility = (user.last_visibility || "public") as "public" | "circle" | "private";
+    const body: Record<string, unknown> = { content: draft, visibility };
+    if (visibility === "circle" && user.last_circle_id) {
+      body.circle_id = user.last_circle_id;
+    }
+
     const r = await api<InspirationFeedItem>("/api/inspirations", {
       method: "POST",
-      body: JSON.stringify({ content: draft, visibility: "public" }),
+      body: JSON.stringify(body),
     });
     if (r.ok) {
       clearDraft();
-      setToastMsg("已公开发布");
-      setToastAction("关闭分享");
+      setToastMsg("已发布");
+      setToastAction(visibility === "public" ? "关闭分享" : "");
       setLastPubId(r.data.id);
       setFeed((prev) => [r.data as InspirationFeedItem, ...prev]);
     }
@@ -79,6 +89,22 @@ export default function Home() {
     });
     setToastMsg("");
     setFeed((prev) => prev.filter((i) => i.id !== lastPubId));
+  }
+
+  async function handleLoadMore() {
+    if (!cursor) return;
+    setLoadingMore(true);
+    try {
+      const r = await api<PaginatedResponse<InspirationFeedItem>>(
+        `/api/inspirations?limit=20&cursor=${encodeURIComponent(cursor)}`
+      );
+      if (r.ok) {
+        setFeed((prev) => [...prev, ...r.data.items]);
+        setCursor(r.data.next_cursor);
+      }
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   async function handleAuth() {
@@ -128,7 +154,7 @@ export default function Home() {
               📷
             </span>
             <span className="text-caption text-text-secondary bg-bg-accent rounded-sm px-sm py-[4px]">
-              🌐 公开
+              🌐 {user?.last_visibility === "private" ? "私密" : user?.last_visibility === "circle" ? "圈子" : "公开"}
             </span>
           </div>
           <button
@@ -187,7 +213,7 @@ export default function Home() {
         ))}
         {cursor && !loading && (
           <button
-            onClick={() => { setLoadingMore(true); loadFeed(); }}
+            onClick={handleLoadMore}
             disabled={loadingMore}
             className="text-caption text-text-secondary text-center py-md hover:text-text-primary"
           >

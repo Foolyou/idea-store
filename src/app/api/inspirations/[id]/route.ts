@@ -1,5 +1,6 @@
-import { getCurrentUser, requireUser, withErrorHandler, jsonOk, NotFoundError } from "@/lib/request";
+import { getCurrentUser, requireUser, withErrorHandler, jsonOk, ValidationError, ForbiddenError, NotFoundError } from "@/lib/request";
 import { getInspirationById, updateInspiration, deleteInspiration } from "@/lib/queries/inspirations";
+import { isCircleMember } from "@/lib/queries/circles";
 import { updateInspirationSchema } from "@/lib/validations";
 
 export const GET = withErrorHandler(async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
@@ -21,7 +22,15 @@ export const PATCH = withErrorHandler(async (req: Request, { params }: { params:
   const parsed = updateInspirationSchema.safeParse(body);
 
   if (!parsed.success) {
-    return Response.json({ ok: false, error: parsed.error.issues[0].message }, { status: 400 });
+    throw new ValidationError(parsed.error.issues[0].message);
+  }
+
+  // If setting circle visibility, verify membership
+  if (parsed.data.visibility === "circle" && parsed.data.circle_id) {
+    const member = await isCircleMember(parsed.data.circle_id, user.id);
+    if (!member) {
+      throw new ForbiddenError("你不是该圈子成员");
+    }
   }
 
   const inspiration = await updateInspiration(id, user.id, parsed.data);

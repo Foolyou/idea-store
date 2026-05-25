@@ -1,4 +1,5 @@
 import { createUploadthing, type FileRouter } from "uploadthing/next";
+import { getSession } from "@/lib/auth";
 
 const f = createUploadthing();
 
@@ -10,7 +11,9 @@ export const ourFileRouter = {
     },
   })
     .middleware(async () => {
-      return {};
+      const session = await getSession();
+      if (!session) throw new Error("请先登录");
+      return { userId: session.userId };
     })
     .onUploadComplete(async ({ file }) => {
       return { url: file.url };

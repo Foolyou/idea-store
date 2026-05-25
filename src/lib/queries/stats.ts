@@ -1,13 +1,10 @@
 import { db } from "../db";
+import { unpackImages } from "../utils";
 import { parseCursor, cursorWhere, paginate } from "./pagination";
 import type { PageParams } from "./pagination";
 
-export interface UserStats {
-  total_likes_received: number;
-  total_bookmarks_received: number;
-  total_inspirations: number;
-  total_circles: number;
-}
+export type { UserStats } from "../types";
+import type { UserStats } from "../types";
 
 export interface BookmarkedItem {
   id: string;
@@ -116,13 +113,4 @@ interface BookmarkRaw {
   circle_name: string | null;
   is_liked: number;
   is_bookmarked: number;
-}
-
-function unpackImages(raw: string): string[] {
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
 }

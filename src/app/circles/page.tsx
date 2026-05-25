@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { CircleCard } from "@/components/circle-card";
@@ -11,18 +12,26 @@ import Link from "next/link";
 
 export default function CirclesPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [circles, setCircles] = useState<CircleItem[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function load(q?: string) {
+  const load = useCallback(async (q?: string) => {
     setLoading(true);
     const r = await api<{ items: CircleItem[] }>(`/api/circles?search=${encodeURIComponent(q || "")}`);
     if (r.ok) setCircles(r.data.items);
     setLoading(false);
-  }
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
+
+  function handleSearchChange(value: string) {
+    setSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => load(value), 300);
+  }
 
   async function handleJoin(circleId: string) {
     const r = await api(`/api/circles/${circleId}/join`, { method: "POST" });
@@ -46,7 +55,7 @@ export default function CirclesPage() {
           className="w-full bg-bg-card rounded-md p-lg text-body text-text-primary placeholder:text-text-tertiary outline-none shadow-card"
           placeholder="搜索圈子…"
           value={search}
-          onChange={(e) => { setSearch(e.target.value); load(e.target.value); }}
+          onChange={(e) => handleSearchChange(e.target.value)}
         />
       </div>
 
@@ -61,7 +70,7 @@ export default function CirclesPage() {
               method: "POST",
               body: JSON.stringify({ name, description: desc }),
             });
-            if (r.ok) load();
+            if (r.ok) load(search);
           }}>+ 创建圈子</Button>
         </div>
       )}
@@ -78,7 +87,7 @@ export default function CirclesPage() {
             name={c.name}
             description={c.description}
             memberCount={c.member_count}
-            onClick={() => {}}
+            onClick={() => router.push(`/circle/${c.id}`)}
           />
         ))}
       </div>
