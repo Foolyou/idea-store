@@ -1,26 +1,38 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useDraft } from "@/hooks/use-draft";
 import { InspirationCard } from "@/components/inspiration-card";
 import { FloatingMenu } from "@/components/floating-menu";
 import { Toast } from "@/components/toast";
+import { BottomSheet } from "@/components/bottom-sheet";
 import { Button } from "@/components/button";
 import { Skeleton } from "@/components/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import type { InspirationFeedItem, PaginatedResponse } from "@/lib/types";
 import Link from "next/link";
 
+type Visibility = "public" | "circle" | "private";
+
 export default function Home() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
+  const router = useRouter();
   const { draft, setDraft, clearDraft } = useDraft();
 
   const [feed, setFeed] = useState<InspirationFeedItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  // Visibility selection
+  const [vis, setVis] = useState<Visibility>("public");
+  const [circleId, setCircleId] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [myCircles, setMyCircles] = useState<{ id: string; name: string }[]>([]);
+  const [publishing, setPublishing] = useState(false);
 
   // Publish state
   const [showLogin, setShowLogin] = useState(false);
@@ -58,28 +70,72 @@ export default function Home() {
     return () => window.removeEventListener("focus", onFocus);
   }, [user, loadFeed]);
 
+  // Inherit last publish config (智能默认)
+  useEffect(() => {
+    if (user) {
+      setVis((user.last_visibility as Visibility) || "public");
+      setCircleId(user.last_circle_id ?? null);
+    }
+  }, [user]);
+
+  // Load joined circles when the picker needs them
+  useEffect(() => {
+    if (pickerOpen && user && myCircles.length === 0) {
+      api<PaginatedResponse<{ id: string; name: string }>>("/api/me/circles").then((r) => {
+        if (r.ok) setMyCircles(r.data.items);
+      });
+    }
+  }, [pickerOpen, user, myCircles.length]);
+
+  const selectedCircleName =
+    myCircles.find((c) => c.id === circleId)?.name ?? "";
+  const visLabel =
+    vis === "private"
+      ? "私密"
+      : vis === "circle"
+      ? selectedCircleName || "圈子"
+      : "公开";
+
   const handlePublish = useCallback(async () => {
     if (!user) { setShowLogin(true); return; }
-    if (!draft.trim()) return;
+    if (!draft.trim() || publishing) return;
 
-    const visibility = (user.last_visibility || "public") as "public" | "circle" | "private";
-    const body: Record<string, unknown> = { content: draft, visibility };
-    if (visibility === "circle" && user.last_circle_id) {
-      body.circle_id = user.last_circle_id;
+    // Circle visibility requires a target circle
+    if (vis === "circle" && !circleId) {
+      setPickerOpen(true);
+      return;
     }
 
-    const r = await api<InspirationFeedItem>("/api/inspirations", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    if (r.ok) {
-      clearDraft();
-      setToastMsg("已发布");
-      setToastAction(visibility === "public" ? "关闭分享" : "");
-      setLastPubId(r.data.id);
-      setFeed((prev) => [r.data as InspirationFeedItem, ...prev]);
+    const body: Record<string, unknown> = { content: draft, visibility: vis };
+    if (vis === "circle" && circleId) {
+      body.circle_id = circleId;
     }
-  }, [user, draft, clearDraft]);
+
+    setPublishing(true);
+    try {
+      const r = await api<InspirationFeedItem>("/api/inspirations", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (r.ok) {
+        clearDraft();
+        // Toast with one-tap unpublish only for public posts (spec §3.2.3 / §7.1)
+        if (vis === "public") {
+          setToastMsg("已公开发布");
+          setToastAction("关闭分享");
+          setLastPubId(r.data.id);
+        } else {
+          setToastMsg("");
+          setToastAction("");
+        }
+        setFeed((prev) => [r.data as InspirationFeedItem, ...prev]);
+        // Refresh user so the inherited config stays in sync
+        refresh();
+      }
+    } finally {
+      setPublishing(false);
+    }
+  }, [user, draft, publishing, vis, circleId, clearDraft, refresh]);
 
   async function handleCloseShare() {
     if (!lastPubId) return;
@@ -153,16 +209,24 @@ export default function Home() {
             <span className="text-caption text-text-secondary bg-bg-accent rounded-sm px-sm py-[4px]">
               📷
             </span>
-            <span className="text-caption text-text-secondary bg-bg-accent rounded-sm px-sm py-[4px]">
-              🌐 {user?.last_visibility === "private" ? "私密" : user?.last_visibility === "circle" ? "圈子" : "公开"}
-            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (!user) { setShowLogin(true); return; }
+                setPickerOpen(true);
+              }}
+              className="text-caption text-text-secondary bg-bg-accent rounded-sm px-sm py-[4px] active:scale-[0.97] transition-transform"
+            >
+              🌐 {visLabel}
+            </button>
           </div>
           <button
             type="button"
             onClick={handlePublish}
-            className="bg-action-primary text-white rounded-full min-h-[44px] px-xl text-body font-medium hover:bg-action-hover transition-colors"
+            disabled={publishing}
+            className="bg-action-primary text-white rounded-full min-h-[44px] px-xl text-body font-medium hover:bg-action-hover transition-colors active:scale-[0.97] disabled:opacity-60"
           >
-            发布
+            {publishing ? "发布中…" : "发布"}
           </button>
         </div>
         {!user && (
@@ -197,7 +261,7 @@ export default function Home() {
           </>
         )}
         {!loading && feed.length === 0 && (
-          <EmptyState title="还没有灵感" description="去发现一些有趣的圈子吧" actionLabel="去发现圈子" />
+          <EmptyState title="还没有灵感" description="去发现一些有趣的圈子吧" actionLabel="去发现圈子" onAction={() => router.push("/circles")} />
         )}
         {feed.map((item) => (
           <Link key={item.id} href={`/idea/${item.id}`} className="block">
@@ -227,6 +291,55 @@ export default function Home() {
 
       <FloatingMenu />
       <Toast visible={!!toastMsg} message={toastMsg} actionLabel={toastAction} onAction={toastAction ? handleCloseShare : undefined} />
+
+      {/* Visibility picker */}
+      <BottomSheet open={pickerOpen} onClose={() => setPickerOpen(false)} title="选择可见范围">
+        <div className="flex flex-col gap-sm">
+          <button
+            onClick={() => { setVis("public"); setCircleId(null); setPickerOpen(false); }}
+            className={`text-left rounded-md p-md transition-colors ${vis === "public" ? "bg-bg-accent" : "hover:bg-bg-accent"}`}
+          >
+            <div className="text-body text-text-primary">🌐 公开</div>
+            <div className="text-caption text-text-tertiary">所有人都能在社区流看到</div>
+          </button>
+
+          <button
+            onClick={() => setVis("circle")}
+            className={`text-left rounded-md p-md transition-colors ${vis === "circle" ? "bg-bg-accent" : "hover:bg-bg-accent"}`}
+          >
+            <div className="text-body text-text-primary">👥 圈子</div>
+            <div className="text-caption text-text-tertiary">仅所选圈子的成员可见</div>
+          </button>
+
+          {vis === "circle" && (
+            <div className="flex flex-col gap-xs pl-md">
+              {myCircles.length === 0 && (
+                <div className="text-caption text-text-tertiary py-sm">
+                  你还没有加入任何圈子，
+                  <Link href="/circles" className="text-action-primary underline">去发现圈子</Link>
+                </div>
+              )}
+              {myCircles.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => { setCircleId(c.id); setPickerOpen(false); }}
+                  className={`text-left text-caption rounded-sm px-md py-sm transition-colors ${circleId === c.id ? "bg-action-primary text-white" : "bg-bg-page text-text-primary hover:bg-bg-accent"}`}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => { setVis("private"); setCircleId(null); setPickerOpen(false); }}
+            className={`text-left rounded-md p-md transition-colors ${vis === "private" ? "bg-bg-accent" : "hover:bg-bg-accent"}`}
+          >
+            <div className="text-body text-text-primary">🔒 私密</div>
+            <div className="text-caption text-text-tertiary">仅自己可见</div>
+          </button>
+        </div>
+      </BottomSheet>
     </div>
   );
 }

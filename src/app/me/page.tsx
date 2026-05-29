@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useDraft } from "@/hooks/use-draft";
@@ -21,12 +21,18 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "settings", label: "账号设置" },
 ];
 
-export default function MePage() {
+const TAB_KEYS: Tab[] = ["inspirations", "circles", "bookmarks", "drafts", "settings"];
+
+function MePageContent() {
   const { user, logout, refresh } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { draft, clearDraft } = useDraft();
 
-  const [tab, setTab] = useState<Tab>("inspirations");
+  const initialTab = searchParams.get("tab");
+  const [tab, setTab] = useState<Tab>(
+    TAB_KEYS.includes(initialTab as Tab) ? (initialTab as Tab) : "inspirations"
+  );
   const [items, setItems] = useState<InspirationFeedItem[]>([]);
   const [circles, setCircles] = useState<any[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
@@ -210,5 +216,13 @@ export default function MePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function MePage() {
+  return (
+    <Suspense fallback={null}>
+      <MePageContent />
+    </Suspense>
   );
 }

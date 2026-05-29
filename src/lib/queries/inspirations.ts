@@ -238,6 +238,12 @@ export async function createInspiration(
     ],
   });
 
+  // Remember this publish config so it can be inherited next time (智能默认)
+  await db.execute({
+    sql: `UPDATE users SET last_visibility = ?, last_circle_id = ? WHERE id = ?`,
+    args: [input.visibility, input.circle_id ?? null, authorId],
+  });
+
   return (await getInspirationById(id, authorId))!;
 }
 

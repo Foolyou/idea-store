@@ -2,9 +2,11 @@
 
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface MenuItem {
   label: string;
+  href?: string;
   onClick?: () => void;
 }
 
@@ -14,12 +16,12 @@ interface FloatingMenuProps {
 }
 
 const defaultItems: MenuItem[] = [
-  { label: "我的灵感" },
-  { label: "我的圈子" },
-  { label: "收藏夹" },
-  { label: "草稿箱" },
-  { label: "发现圈子" },
-  { label: "账号设置" },
+  { label: "我的灵感", href: "/me?tab=inspirations" },
+  { label: "我的圈子", href: "/me?tab=circles" },
+  { label: "收藏夹", href: "/me?tab=bookmarks" },
+  { label: "草稿箱", href: "/me?tab=drafts" },
+  { label: "发现圈子", href: "/circles" },
+  { label: "账号设置", href: "/me?tab=settings" },
 ];
 
 export function FloatingMenu({
@@ -27,6 +29,7 @@ export function FloatingMenu({
   className,
 }: FloatingMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const router = useRouter();
 
   return (
     <>
@@ -48,6 +51,7 @@ export function FloatingMenu({
                 key={item.label}
                 onClick={() => {
                   item.onClick?.();
+                  if (item.href) router.push(item.href);
                   setIsOpen(false);
                 }}
                 className="text-[14px] text-text-primary py-[6px] px-sm rounded-sm hover:bg-bg-accent text-left transition-colors"
